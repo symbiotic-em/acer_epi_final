@@ -1,0 +1,786 @@
+#final script without array quality metrics
+
+library(ape)
+library(phyloseq)
+library(ggplot2)
+library(ShortRead)
+library(data.table)
+library(plyr)
+library(vegan)
+library(grid)
+library(DESeq2)
+#library(DESeq)
+library(outliers)
+library(gridExtra)#for grid.arrange
+library("nlme")
+library("reshape2")
+library("dplyr")
+library("edgeR"); packageVersion("edgeR")
+library(arrayQualityMetrics)
+library(microbiome) 
+library(eulerr)
+library(dunn.test)
+library(ggpubr)
+
+
+
+########### Set Phylosq ######################
+setwd("/Users/your/path")
+
+seqtab.nochim1=readRDS("t0_seqtab2.rds")
+taxa1=readRDS("t0_taxonomy.rds")
+#taxa=replace(taxa, taxa == " ", NA) 
+#samdata=read.csv("samdata.csv")
+samdata1=read.csv("t0_sample2.csv")
+head(samdata1)
+rownames(samdata1)=samdata1$Sample_ID
+
+#create phyloseq object
+
+ps1=phyloseq(otu_table(seqtab.nochim1, taxa_are_rows=FALSE), sample_data(samdata1), tax_table(taxa1))
+ps1
+
+seqtab.nochim=readRDS("t1merged_seqtab2.rds")
+taxa=readRDS("t1merged_taxonomy.rds")
+#taxa=replace(taxa, taxa == " ", NA) 
+#samdata=read.csv("samdata.csv")
+samdata=read.csv("t1_merged_samdata.csv")
+head(samdata)
+rownames(samdata)=samdata$Sample_ID
+#create phyloseq object
+
+ps2=phyloseq(otu_table(seqtab.nochim, taxa_are_rows=FALSE), sample_data(samdata), tax_table(taxa))
+ps2
+sample_sums(ps2)
+###merge both datasets
+
+#change sample_names for ps2 so they don't merge w ps1 samples, after merging phyloseq objects
+#preface with "t12_"
+sample_names(ps2) <- paste("t12_", sample_names(ps2), sep="")
+sample_names(ps2)
+
+sample_data(ps2)$Genotype <- paste("t12_", sample_data(ps2)$Genotype, sep="")
+sample_data(ps2)$Genotype
+
+
+#now we can join these two matrices
+joint_ps=merge_phyloseq(ps1, ps2)
+joint_ps  #240 samples
+
+#clean the phyloseq object as done previously (check out separate scripts for T0 and T1, respectively)
+#prune this sample because I cannot account for its genotype as
+#it was entered incorrectly into the system
+
+joint_ps=subset_samples(joint_ps, sample_names(joint_ps) !="Gr7")
+joint_ps #36613 ASVs
+joint_ps #239 samples
+
+############################ Detour: Check mitochondria ###################################
+#subset mitochondria 
+mito=subset_taxa(joint_ps, Family =="Mitochondria") #21561 ASVs taxa left
+mito
+mito=subset_samples(mito, sample_data(mito)$Sample_ID != "Gr7") #remove sample with unclear origin
+mito=subset_samples(mito, sample_data(mito)$Genotype != "99") #remove tech replicate
+mito=subset_taxa(mito, Phylum !="Ochrophyta") #protists
+mito=subset_taxa(mito, Phylum !="Protalveolata") #protists
+mito=subset_taxa(mito, Phylum !="Apicomplexa") #protists
+
+mito=subset_samples(mito, sample_data(mito)$Genotype != "t12_99") #tech replicate
+mito=subset_samples(mito, sample_data(mito)$Genotype != "t12_EDR  ") # FSW
+mito=subset_samples(mito, sample_data(mito)$Genotype != "t12_ES  " ) #FSW
+mito=subset_samples(mito, sample_data(mito)$Genotype != "t12_MS  " ) #FSW
+mito
+
+#Merge by type#
+ps4<-merge_samples(mito, "Genotype")
+ps4
+
+#plot to visualize distribution
+pmito=plot_bar(ps4, fill="Family")+  geom_bar(aes( fill=Family), stat="identity", position="stack")+ theme_bw()+
+theme(text = element_text(size = 16))+
+       theme(axis.text.x = element_text(face="bold", 
+                           size=10),
+          axis.text.y = element_text(face="bold",  
+                           size=14))+ theme_bw() + theme(text = element_text(size = 16))+theme(legend.title = element_text(size = 14),
+          legend.text = element_text(size= 14)) + facet_wrap(~Timepoints, scales = "free_x")
+pmito
+
+#if interested in creating a phylo tree or obtaining ASV 
+#use Biostrings 
+
+sequences <- Biostrings::DNAStringSet(taxa_names(ps4))
+names(sequences) <- taxa_names(ps4)
+ps.all <- merge_phyloseq(ps4, sequences)
+ps.all
+#use the ref_seq slots
+rs <- refseq(ps.all)
+rs # inspect
+# Get strings with the full taxonomy for each OTU/ASV
+tax <- tax_table(ps.all)
+head(tax) # inspect
+tax_strings <- apply(tax, 1, paste, collapse=";")
+head(tax_strings) # inspect and BEAUTIFUL
+
+# Create new names for the sequences in the refseq object; these will become
+# the sequence headers in the fasta file. Here, I set these to be the OTU/ASV
+# name and the tax string separated by one space (determined by the sep
+# parameter)
+
+taxa_names(ps4) <- paste0("ASV", seq(ntaxa(ps4)))
+new_names <- paste(taxa_names(ps4), tax_strings, sep = " ")
+head(new_names) # inspect
+# Update the refeq names and save as a fasta file
+names(rs) <- new_names
+rs # inspect
+#create fasta file with Biostrings!!!!
+Biostrings::writeXStringSet(rs, "mitochondria.fasta")
+
+######################### Back to our analysis  #######################################
+
+#36613 taxa but what happens when
+#filter out chloroplasts, mitochondria, protists and taxa counts 0 and under?
+
+joint_ps=subset_taxa(joint_ps, (Class!="Chloroplast") | is.na(Class))
+joint_ps #still 36613 ASVs
+joint_ps=subset_taxa(joint_ps, Family !="Mitochondria") #21561 ASVs taxa left
+joint_ps
+joint_ps=prune_taxa(taxa_sums(joint_ps) > 0, joint_ps)
+joint_ps #now we have 21554 ASVs and 239 samples,#if interested in chloroplasts or mitochondrial sequences, we can subset and explore later 
+
+joint_ps=subset_taxa(joint_ps, Phylum !="Ochrophyta") #protists
+joint_ps=subset_taxa(joint_ps, Phylum !="Protalveolata") #protists
+joint_ps=subset_taxa(joint_ps, Phylum !="Apicomplexa") #protists
+joint_ps=prune_taxa(taxa_sums(joint_ps) > 0, joint_ps)
+joint_ps
+#21554 taxa left
+
+
+#gonna take out <5000 reads
+
+#take out low reads
+#let's toss out some samples < 5000 
+#plot(sort(sample_sums(joint_ps),TRUE),type="h", ylab="reads")
+#should have a total of  124 samples 
+summary(sample_sums(joint_ps)> 5000) # 21554 ASVs and 191 samples left (OUCH!), 48 samples rejected
+#write.csv(sample_sums(j2ps), "five000andabove_samplesums.csv")
+#if ok with this number (we have minimal choices here), go ahead and subset to only these...
+joint_ps=subset_samples(joint_ps, sample_sums(joint_ps)>5000)
+joint_ps
+sample_data(joint_ps)
+
+#write.csv(sample_data(joint_ps), "joint_samdata.csv")
+#gonna take out water samples and anything not lated to timepoint T0 and T12, which I labeled for clarity T665 and T666
+
+#alternate to include water, 21554 ASVs and 191 samples
+j2ps=subset_samples(joint_ps, sample_data(joint_ps)$Sample_ID != "Gr7")
+j2ps=subset_samples(joint_ps, sample_data(joint_ps)$Genotype != "t12_99")
+
+#to not include filtered seawater
+j2ps=subset_samples(joint_ps, sample_data(joint_ps)$Timepoint !="T665")
+j2ps  #188 samples
+j2ps=subset_samples(j2ps, sample_data(j2ps)$Timepoint !="T666")
+j2ps  #21554 ASVs, 182 samples leftover
+
+
+#take out ASVs with 0 counts out in our samples and rarefy
+ps=prune_taxa(taxa_sums(j2ps) > 0, j2ps)
+length(get_taxa_unique(ps2, taxonomic.rank = "Genus"))
+[434]
+#add a tree
+random_tree=rtree(ntaxa(ps), rooted=TRUE, tip.label=taxa_names(ps))
+#merge the tree
+ps=merge_phyloseq(ps, random_tree)
+ps  #19612 ASVs taxa without the water , 21113 ASVS with the water 
+
+####################  Outlier detection with arrayqualitymetrics  ###################### 
+
+cds=phyloseq_to_deseq2(ps, ~Genotype)
+#take the zero counts out
+geoMeans=apply(counts(cds), 1, function(row) if (all(row == 0)) 0 else exp(mean(log(row[row != 0]))))
+cds=estimateSizeFactors(cds, geoMeans= geoMeans)
+sizeFactors(cds)
+
+#to estimate dispersions we will use the default parameters, as used by Joey/Phyloseq
+#and other microbiome studies, which is 
+#estimateDispersions(object, "pooled","maximum","parametric")
+
+cds1=estimateDispersions(cds)
+vsd=varianceStabilizingTransformation(cds1)
+v="/your/path/here"
+
+#will have to make your own "arrayQualityMetrics" function in DESeq2
+#Because DESeq's CountDataSet extended eSet, the arrayQualityMetrics methods
+#worked automatically. 
+
+#DESeq2's data object DESeqDataSet extends SummarizedExperiment,
+#which is a different class, although it's a similar "shape" of object:
+# a matrix of values (accessed with exprs/assay) with column info (pData/colData)
+#and row info (fData/rowData).
+
+e=ExpressionSet(assay(vsd), AnnotatedDataFrame(as.data.frame(colData(vsd))))
+arrayQualityMetrics(e, intgroup=c("Genotype"), force=T)
+
+#check the output folder, especially the html folder
+#despite the boxplots in the Shannon Diversity boxplots 
+#and the list of "outliers"in arrayQualityMetrics, we do not have enough evidence 
+#to convince us that any of these values are outliers, since
+#only 1 section ("Between Array Comparison") indicates outliers. 
+#to accept that values are outliers we should have samples 
+#marked off as outliers in at least 2 sections, and this is not the case
+#If done with outliers, move on to the data exploration, ordination
+# and other stat. analyses phases 
+
+##########################   Rarefy   ###########################################
+ps_rare <- phyloseq::rarefy_even_depth(ps, rngseed = 123, replace = FALSE)
+ps_rare #15750 ASVs without the water, 16850 ASVs with the water
+
+
+###############Get abundances and averages/ summarize taxa ########################
+
+#adapted from answers to questions in the Phyloseq forums
+
+library("data.table")
+
+
+fast_melt = function(physeq){
+  # supports "naked" otu_table as `physeq` input.
+  otutab = as(otu_table(physeq), "matrix")
+  if(!taxa_are_rows(physeq)){otutab <- t(otutab)}
+  otudt = data.table(otutab, keep.rownames = TRUE)
+  setnames(otudt, "rn", "taxaID")
+  # Enforce character taxaID key
+  otudt[, taxaIDchar := as.character(taxaID)]
+  otudt[, taxaID := NULL]
+  setnames(otudt, "taxaIDchar", "taxaID")
+  # Melt count table
+  mdt = melt.data.table(otudt, 
+                        id.vars = "taxaID",
+                        variable.name = "SampleID",
+                        value.name = "count")
+  # Remove zeroes, NAs
+  mdt <- mdt[count > 0][!is.na(count)]
+  # Calculate relative abundance
+  mdt[, RelativeAbundance := count / sum(count), by = SampleID]
+  if(!is.null(tax_table(physeq, errorIfNULL = FALSE))){
+    # If there is a tax_table, join with it. Otherwise, skip this join.
+    taxdt = data.table(as(tax_table(physeq, errorIfNULL = TRUE), "matrix"), keep.rownames = TRUE)
+    setnames(taxdt, "rn", "taxaID")
+    # Enforce character taxaID key
+    taxdt[, taxaIDchar := as.character(taxaID)]
+    taxdt[, taxaID := NULL]
+    setnames(taxdt, "taxaIDchar", "taxaID")
+    # Join with tax table
+    setkey(taxdt, "taxaID")
+    setkey(mdt, "taxaID")
+    mdt <- taxdt[mdt]
+  }
+  return(mdt)
+}
+
+summarize_taxa = function(physeq, Rank, GroupBy = NULL){
+  Rank <- Rank[1]
+  if(!Rank %in% rank_names(physeq)){
+    message("The argument to `Rank` was:\n", Rank,
+            "\nBut it was not found among taxonomic ranks:\n",
+            paste0(rank_names(physeq), collapse = ", "), "\n",
+            "Please check the list shown above and try again.")
+  }
+  if(!is.null(GroupBy)){
+    GroupBy <- GroupBy[1]
+    if(!GroupBy %in% sample_variables(physeq)){
+      message("The argument to `GroupBy` was:\n", GroupBy,
+              "\nBut it was not found among sample variables:\n",
+              paste0(sample_variables(physeq), collapse = ", "), "\n",
+              "Please check the list shown above and try again.")
+    }
+  }
+  # Start with fast melt
+  mdt = fast_melt(physeq)
+  if(!is.null(GroupBy)){
+    # Add the variable indicated in `GroupBy`, if provided.
+    sdt = data.table(SampleID = sample_names(physeq),
+                     var1 = get_variable(physeq, GroupBy))
+    setnames(sdt, "var1", GroupBy)
+    # Join
+    setkey(sdt, SampleID)
+    setkey(mdt, SampleID)
+    mdt <- sdt[mdt]
+  }
+  # Summarize
+  Nsamples = nsamples(physeq)
+  summarydt = mdt[, list(meanRA = mean(RelativeAbundance),
+                         sdRA = sd(RelativeAbundance),
+                         minRA = min(RelativeAbundance),
+                         maxRA = max(RelativeAbundance)),
+                  by = c(Rank, GroupBy)]
+  return(summarydt)
+}
+
+plot_taxa_summary = function(physeq, Rank, GroupBy = NULL){
+  # Get taxa summary table 
+  dt1 = summarize_taxa(physeq, Rank = Rank, GroupBy = GroupBy)
+  # Set factor appropriately for plotting
+  RankCol = which(colnames(dt1) == Rank)
+  setorder(dt1, -meanRA)
+  dt1[, RankFac := factor(dt1[[Rank]], 
+                          levels = rev(dt1[[Rank]]))]
+  dt1[, ebarMax := max(c(0, min(meanRA + sdRA))), by = eval(Rank)]
+  dt1[, ebarMin := max(c(0, min(meanRA - sdRA))), by = eval(Rank)]
+  # Set zeroes to one-tenth the smallest value
+  ebarMinFloor = dt1[(ebarMin > 0), min(ebarMin)]
+  ebarMinFloor <- ebarMinFloor / 10
+  dt1[(ebarMin == 0), ebarMin := ebarMinFloor]
+
+  pRank = ggplot(dt1, aes(x = meanRA, y = RankFac)) +
+    scale_x_log10() +
+    xlab("Mean Relative Abundance") +
+    ylab(Rank) +
+    theme_bw()
+  if(!is.null(GroupBy)){
+    # pRank <- pRank + facet_wrap(facets = as.formula(paste("~", GroupBy)))
+    pRank <- pRank + geom_point(mapping = aes_string(colour = GroupBy),
+                                size = 5)
+  } else {
+    # Don't include error bars for faceted version
+    pRank <- pRank + geom_errorbarh(aes(xmax = ebarMax,
+                                        xmin = ebarMin))
+  }
+  return(pRank)
+}
+
+
+# Test
+
+plot_taxa_summary(ps_rare, "Phylum")
+plot_taxa_summary(ps_rare, "Phylum", "Genotype")
+summarize_taxa(ps_rare, "Phylum")
+summarize_taxa(ps_rare, "Phylum", "Genotype")
+
+
+#################### Alpha Diversity  ############################################
+#use this with subset data that includes the water 
+alph <- estimate_richness(ps_rare, measures = c("Observed", "Shannon", "Simpson", "Chao1", "Fisher"))
+alph
+
+#plot richness by measure
+p1= plot_richness(ps_rare, x="Genotype", measures="Simpson")+  geom_boxplot(fill="gray") + facet_wrap(~Timepoint) + theme(text = element_text(size = 16))+ theme_bw()
+p1w2=p1+ theme(axis.text.x = element_text(face="bold", 
+                           size=12),
+          axis.text.y = element_text(face="bold",  
+                           size=14))+
+           theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))+
+       ylab("Shannon's diversity")
+
+#is the data normal?
+hist(alph$Shannon, main="Shannon diversity", breaks=10) #yes it is. 
+
+#Now we want to know if genotypes only (not water) are different from each other (a-diversity, Shannon)
+
+#use Genotypes only subsetted data (see above 
+#So just do ANOVA, followed by Tukey HSD. If data wasn't normal, you'd do a Kruskal Wallis test
+#like below the aov, using vegan
+
+my_factors = data.frame(sample_data(ps_rare))
+summary(ps_rare)
+set.seed(123)
+aov_alpha_genets=aov(alph$Shannon ~ my_factors$Genotype)
+summary(aov_alpha_genets) 
+
+#who is different?
+TukeyHSD(aov_alpha_genets)
+
+  
+#What about for different sites?
+aov_alpha_genets=aov(alph$Shannon ~ my_factors$Site)
+summary(aov_alpha_genets) #nope
+
+#      Df Sum Sq Mean Sq F value Pr(>F)
+#my_factors$Site   9   4.17  0.4639   1.106  0.361
+#Residuals       172  72.13  0.4194  
+
+#Is Shannon different for timepoints? We can use t-test here since it's T0 vs T12
+#t-test to test between two timepoints, Mann-Whitney Wilcoxon Test)
+set.seed(123)
+p5=wilcox.test(alph$Shannon, sample_data(ps_rarenw)$Timepoints, p.adjust.method="fdr")
+ata:  alph$Shannon and sample_data(ps_rarenw)$Timepoints
+W = 18746, p-value = 0.02697
+alternative hypothesis: true location shift is not equal to 0
+
+################## Relative abundance ###############
+
+#filter out taxa that doesn't appear more than 5x in more than 1 sample. 
+ps2_rare=filter_taxa(ps_rare, function(x) sum(x > 5) > (0.005*length(x)), TRUE)
+ps2_rare ### 6966 ASVs with the water 
+ 
+
+#merge genotypes
+ps3_rare=subset_samples(ps2_rare, sample_names(ps3_rare) !="t12_99") #make sure technical replicate is tossed
+ps3_rare<-merge_samples(ps2_rare, "Genotype")
+ps3_rare<-transform_sample_counts(ps3_rare, function(x) x /sum(x))
+str(sample_data(ps3_rare)$Genotype)
+sample_sums(ps3_rare)
+
+#plot relative abundance, phylum
+p2=plot_bar(ps3_rare, fill="Phylum")
+p2
+phylumplot= p2+ geom_bar(aes(color=Phylum, fill=Phylum), stat="identity", position="stack")+ theme_bw()+ theme(text = element_text(size = 16))+ theme_bw()+
+scale_x_discrete(name ="Genotype", 
+                    limits=c("3", "7", "36", "41", "1", "13", "31", "44", "50", "62", "N", "t12_3", "t12_7",
+       "t12_36", "t12_41", "t12_1", "t12_13", "t12_31", "t12_44", "t12_50", "t12_62", "t12_BP  " , "t12_BH", "t12_LK  ")) +
+theme(axis.text.x = element_text(face="bold", 
+                           size=10),
+          axis.text.y = element_text(face="bold",  
+                           size=14))+ theme_bw() + theme(text = element_text(size = 16))+theme(legend.title = element_text(size = 14),
+          legend.text = element_text(size= 14))
+
+phylumplot
+
+#plot top 100 ASVs
+#preferably using the same color of the phyla for correspondent genera
+#extract the colors 
+#Get the scale for the class palette to match up with the colors in phyla 
+  
+library(scales)
+n2 <- 18                                               # Higher amount of hex colors
+hex_codes2 <- hue_pal()(n2)                             # Identify hex codes
+show_col(hex_codes2) 
+topcolors=c("#F564E3", "#00BF74")
+
+top100 <- names(sort(taxa_sums(ps3_rare), decreasing=TRUE))[1:100]
+ps.top100 <- transform_sample_counts(ps3_rare, function(OTU) OTU/sum(OTU))
+ps.top100 <- prune_taxa(top100, ps.top100)
+#plot genera
+genus_top100=plot_bar(ps.top100, fill="Genus")+ scale_color_manual(values = topcolors)
+genus_top100=genus_top100+ geom_bar(aes( fill=Genus), stat="identity", position="stack")+ theme_bw()+
+theme(text = element_text(size = 16))+
+       theme(axis.text.x = element_text(face="bold", 
+                           size=10),
+          axis.text.y = element_text(face="bold",  
+                           size=14))+ theme_bw() + theme(text = element_text(size = 16))+theme(legend.title = element_text(size = 14),
+          legend.text = element_text(size= 14))
+
+genus_top100
+
+################### Beta diversity #################################
+
+site_colors<- c("#edae49", "#4DBBD5B2", "#00A087B2", "#3C5488B2", "#F39B7FB2", "#8491B4B2", "#91D1C2B2", "#DC0000B2", "#7E6148B2", "#8d96a3")
+type_colors<-c("#F8766D", "#7E6148B2", "#4DBBD5B2") 
+sw_site<-c("Coral"="#F8766D", "BH_SW"="#edae49", "BP_SW"="#4DBBD5B2", "LK_SW"="#8491B4B2", "Nursery"="#7E6148B2" )
+
+set.seed(123)
+ordinate<- ordinate(ps2_rare, method = "PCoA", distance ="wunifrac")
+evals <- ordinate$values$Eigenvalues
+p3=plot_ordination(ps2_rare, ordinate, color = "Site", shape = "Timepoint") +
+  scale_color_manual(values = site_colors)+
+  coord_fixed(sqrt(evals[2] / evals[1])) +
+  labs(col = "Site", shape = "Timepoints")+ geom_point(size = 4) + theme_bw() + theme(text = element_text(size = 14))+
+  facet_wrap(~Genotype, ncol=2)+ theme(axis.text.x = element_text(face="bold", 
+                           size=14),
+          axis.text.y = element_text(face="bold",  
+                           size=14))
+p3
+
+#order by genet
+genetorder=c("3", "7", "36", "41", "1", "13", "31", "44", "50", "62")
+p3$data$Genotype <- as.character(p3$data$Genotype)
+p3$data$Genotype <- factor(p3$data$Genotype, levels=genetorder)
+print(p3)
+
+#we will use either adonis or ANOSIM depending on homogeneity of group dispersion
+#determined by BETADISPER
+
+###Low MD3-55 genotypes vs high MD3-55 genotypes (corals only)
+#create dataframe 
+G41bray=phyloseq::distance(ps2_rare, method="bray")
+sampledf=data.frame(sample_data(ps2_rare))
+#test for homogeneity of groups dispersions for each group set
+#Perm_2 is all the genotypes that host low MD3-55 abundances or none
+beta=betadisper(G41bray, sampledf$Perm_2)
+beta
+permutest(beta) #nope not evenly dispersed
+anosim(G41bray, sampledf$Perm_2, permutations = 1000)
+
+###Low MD3-55 genotypes vs high MD3-55 genotypes (without MD3-55) (corals only)
+#here we will see if it's MD3-55 driving those differences
+#prune all the MD3-55 out  
+ps4rare=subset_taxa(ps_rare, Genus !="MD3-55")
+ps4rare
+nomd355bray=phyloseq::distance(ps4rare, method="bray")
+sampledf=data.frame(sample_data(ps4rare))
+anosim(nomd355bray, sampledf$Perm_2, permutations = 1000)
+
+###coral genotypes T0 vs T12 (can use the dataset containing FSW, just prune it out)
+ps9=subset_samples(ps2_rare, sample_data(ps2_rare)$Timepoint !="T665")
+ps9  #188 samples
+ps9=subset_samples(ps9, sample_data(ps9)$Timepoint !="T666")
+ps9  #21554 ASVs, 182 samples leftover
+time0vs12=phyloseq::distance(ps9, method="bray")
+sampledf=data.frame(sample_data(ps9))
+#test for homogeneity of groups dispersions for each group set
+beta=betadisper(time0vs12, sampledf$Timepoints)
+beta
+permutest(beta) # here evenly dispersed so we can use adonis (PERMANOVA)
+adonis(time0vs12~ Timepoints, data=sampledf)
+
+###corals (all corals vs nursery FSW water in T0) 
+ps7= subset_samples(ps2_rare, sample_data(ps2_rare)$Timepoints !="12") #leave only the T0 samples
+ps7
+head(sample_data(ps7))
+coralnur=phyloseq::distance(ps7, method="bray")
+sampledf=data.frame(sample_data(ps7))
+#test for homogeneity of groups dispersions for each group set
+beta=betadisper(coralnur, sampledf$Type)
+beta
+permutest(beta) 
+anosim(coralnur, sampledf$Perm_2, permutations = 1000)
+
+###BH corals vs BH water 
+ps7= subset_samples(ps2_rare, sample_data(ps2_rare)$Site =="BH")
+ps7
+head(sample_data(ps7))
+bh=phyloseq::distance(ps7, method="bray")
+sampledf=data.frame(sample_data(ps7))
+#test for homogeneity of groups dispersions for each group set
+beta=betadisper(bh, sampledf$Type)
+beta
+permutest(beta) 
+#groups are evenly dispersed, so PERMANOVA is good
+adonis(formula = bh ~ Type, data = sampledf) 
+
+###BP corals vs BP FSW
+ps7= subset_samples(ps2_rare, sample_data(ps2_rare)$Site =="BP")
+ps7
+head(sample_data(ps7))
+bp=phyloseq::distance(ps7, method="bray")
+sampledf=data.frame(sample_data(ps7))
+#test for homogeneity of groups dispersions for each group set
+beta=betadisper(bp, sampledf$Type)
+beta
+permutest(beta) 
+#groups are evenly dispersed, so PERMANOVA is good
+adonis(formula = bp ~ Type, data = sampledf) 
+
+############  Focusing on MD3-55 ##################################
+
+#subset MD3-55
+ps_midi= subset_taxa(ps2_rare, Genus == "MD3-55")
+ps_midi 
+
+#dataframe to plot abundances 
+ps_mididf <- phyloseq::tax_glom(ps_midi, "Genus")
+p4=phyloseq::psmelt(ps_mididf) %>%
+ggplot(data = ., aes(x = Timepoint, y = Abundance)) +theme(text = element_text(size = 16))+ ylim(0,5049)+
+  scale_shape_manual(values = 0:10)+
+  geom_boxplot(outlier.shape  = NA) +
+  geom_jitter(aes(color = Site,  size=4), height = 0, width = .2) +
+  scale_color_manual(values = site_colors)+
+  labs(x = "", y = "Abundance (Counts)\n") + ggtitle("MD3-55")+
+  facet_wrap(~ Genotype, scales = "free", ncol=5)+ theme(axis.text.x = element_text(face="bold", 
+                           size=14),
+          axis.text.y = element_text(face="bold",  
+                           size=14))+ theme_bw() + theme(text = element_text(size = 16))+theme(legend.title = element_text(size = 14),
+          legend.text = element_text(size= 14))
+
+p4
+
+#plot the heatmap with the ASVs
+#make into microbiome object 
+pseq.rel <- microbiome::transform(ps_midi, "compositional")
+dna <- Biostrings::DNAStringSet(taxa_names(pseq.rel))
+names(dna) <- taxa_names(pseq.rel)
+ps.m3.rel <- merge_phyloseq(pseq.rel, dna)
+taxa_names(ps.m3.rel) <- paste0("ASV", seq(ntaxa(pseq.rel)))
+taxa_names(ps.m3.rel)
+# now check again
+taxa_names(ps.m3.rel)[1:3]
+ps21=merge_samples(ps.m3.rel, "Site")
+ps21<-transform_sample_counts(ps21, function(x) x /sum(x))
+p9=plot_heatmap(ps7, "NMDS", "bray", sample.order=c("EDR", "MR32", "WS", "ES", "MS", "DL", "LK", "BP", "BH", "Nursery"), low="#e5f5f9", high="#2ca25f", na.value="white")+ 
+theme(text = element_text(size = 16))+theme(legend.title = element_text(size = 14),
+          legend.text = element_text(size= 14))
+ggarrange(p9)
+#order by site from West to East 
+siteorder=c("EDR", "MR32", "WS", "ES", "MS", "DL", "LK", "BP", "BH", "Nursery")
+p9$data$Site <- as.character(p9$data$Site)
+p9$data$Site <- factor(p9$data$Site, levels=siteorder)
+print(p9)
+
+#plot Venn Diagram 
+#get the function from https://rdrr.io/github/Russel88/MicEco/src/R/ps_venn.R
+ps_venn <- function(ps, group, fraction = 0, weight = FALSE, type = "percent", relative = TRUE, plot = TRUE, ...){
+    
+    if(relative){
+        ps <- transform_sample_counts(ps, function(x) x/sum(x))
+    }
+    
+    if(taxa_are_rows(ps)){
+        ps_melted <- reshape2::melt(otu_table(ps))
+    } else {
+        ps_melted <- reshape2::melt(t(otu_table(ps)))
+    }
+    ps_melted <- merge(ps_melted, sample_data(ps), by.x = "Var2", by.y = "row.names")
+
+    ps_agg <- aggregate(as.formula(paste("value ~ Var1 +",group)), data = ps_melted, function(x) (sum(x > 0)/length(x) >= fraction) * mean(x))
+    
+    ps_mat <- reshape2::dcast(as.formula(paste("Var1 ~ ",group)), data = ps_agg, value.var = "value")
+    
+    rownames(ps_mat) <- ps_mat[, 1]
+    ps_mat <- ps_mat[, -1]
+    ps_mat_bin <- (ps_mat>0)*1
+    
+    if(weight){
+        df <- eulerr::venn(ps_mat_bin, weights = rowMeans(ps_mat))
+    } else {
+        df <- eulerr::venn(ps_mat_bin)
+    }
+    
+    if(plot){
+        plot(df, quantities = list(type=type), ...)
+    } else {
+        singles <- apply(ps_mat_bin, 2, function(x) names(x[x > 0]))
+        combis <- do.call(c, lapply(2:ncol(ps_mat), 
+                                    function(k) lapply(lapply(1:(ncol(combn(1:ncol(ps_mat_bin), m = k))),
+                                                              function(y) ps_mat_bin[, combn(1:ncol(ps_mat_bin), m = k)[, y]]),
+                                                       function(x) rownames(x[rowSums(x) >= k, ]))))
+        
+        names(combis) <- do.call(c, lapply(2:ncol(ps_mat), function(k) apply(combn(colnames(ps_mat_bin), m = k), 2, function(x) paste(x, collapse = " & "))))
+        combined <- c(lapply(seq_along(singles), function(x) setdiff(singles[[x]], do.call(c, singles[-x]))),
+                      lapply(seq_along(combis)[1:(length(combis)-1)], function(x) setdiff(combis[[x]], do.call(c, combis[-x]))),
+                      combis[length(combis)])
+        names(combined) <- c(names(singles), names(combis))
+        return(combined)
+    }
+}
+
+#execute it with your own parameters: https://rdrr.io/github/Russel88/MicEco/man/ps_venn.html
+
+mycols <- c(T0="#d6e2e9", T12="#cbf3f0") 
+
+
+ps_venn(ps_midi, "Timepoint", fraction= 0.0001, weight= FALSE, type ="counts", relative= TRUE, plot = TRUE, fills = mycols, labels = list(col = "black", font=7, fontsize = 17))
+
+
+############################ Plot 'core' from microbiome package  ############################
+#get core and plot heatmap 
+library(microbiome)
+library(microbiomeutilities)
+ibrary(RColorBrewer)
+library(patchwork)
+library(ggpubr)
+library(easypackages)
+
+#use ps2,  non-rarefied data 
+ps2=filter_taxa(ps, function(x) sum(x > 20) > (0.005*length(x)), TRUE)
+#ps2
+#add tree
+#agglomerating and figuring out what genera will still be there after filtering
+length(get_taxa_unique(ps2, taxonomic.rank = "Genus"))
+[123]
+#add a tree
+random_tree=rtree(ntaxa(ps2), rooted=TRUE, tip.label=taxa_names(ps2))
+#merge the tree
+ps2=merge_phyloseq(ps2, random_tree)
+ps2
+
+#transform into microbiome object, non-rarefied data 
+pseq.rel <- microbiome::transform(ps2, "compositional")
+#rel. pop frequencies at 1% compositional relative abundance
+head(prevalence(pseq.rel, detection = 1/100, sort = TRUE))
+head(prevalence(pseq.rel, detection = 1/100, sort = TRUE, count = TRUE))
+dna <- Biostrings::DNAStringSet(taxa_names(pseq.rel))
+names(dna) <- taxa_names(pseq.rel)
+ps.core <- merge_phyloseq(pseq.rel, dna)
+
+taxa_names(ps.core) <- paste0("ASV", seq(ntaxa(pseq.rel)))
+taxa_names(ps.core)
+# now check again
+taxa_names(ps.core)[1:3]
+#create p.seq core object containing 0.001 detection in at least 50/100 % of the samples
+pseq.core <- core(ps.core, detection = 0.001, prevalence = .50)
+pseq.core
+
+#get ready to plot 
+# create a gradient color palette for abundance
+grad_ab <- colorRampPalette(c("#faf3dd","#f7d486" ,"#5e6472"))
+grad_ab_pal <- grad_ab(10)
+
+# create a gradient color palette for prevalence
+gray_grad <- colorRampPalette(c("white", "steelblue"))
+gray_grad_cols <- gray_grad(10)
+#create a color palette for varaibles of interest
+meta_colors <- list(c("T0" = "darkseagreen1", 
+                      "T12" = "darkseagreen4"), 
+                    c("1" = "#F8766D", 
+                      "13" = "#D89000", 
+                      "3"="#A3A500",
+			    "31"="#39B600",
+			    "36"="#00BF7D",
+			    "41"="#00BFC4",
+                      "44"="#00B0F6",
+                      "50"="#9590FF",
+                      "62"="#E76BF3",
+                      "7"="#FF62BC"),
+                    gray_grad_cols)
+
+library(scales)
+show_col(hue_pal()(10))
+
+# add labels for pheatmap to detect
+names(meta_colors) <- c("Timepoint", "Genotype","Prevalence"
+
+p7=plot_taxa_heatmap(pseq.core,
+                      subset.top = 114,
+                       VariableA = c("Genotype","Timepoint"),
+                       heatcolors = grad_ab_pal, #rev(brewer.pal(6, "RdPu")),
+                       transformation = "log10",
+                       cluster_rows = T,
+                       cluster_cols = F,
+                       show_colnames = F,
+                       annotation_colors=meta_colors, 
+                       fontsize_row = 6)
+
+
+ggarrange(p7)
+p7
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
