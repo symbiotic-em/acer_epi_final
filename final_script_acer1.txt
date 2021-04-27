@@ -1,5 +1,3 @@
-#final script without array quality metrics
-
 library(ape)
 library(phyloseq)
 library(ggplot2)
@@ -377,7 +375,7 @@ hist(alph$Shannon, main="Shannon diversity", breaks=10) #yes it is.
 
 #Now we want to know if genotypes only (not water) are different from each other (a-diversity, Shannon)
 
-#use Genotypes only subsetted data (see lines 174-182 above for more info)
+#use Genotypes only subsetted data (see lines 172-180 above for more info)
 #So just do ANOVA, followed by Tukey HSD. If data wasn't normal, you'd do a Kruskal Wallis test
 #like below the aov, using vegan
 
