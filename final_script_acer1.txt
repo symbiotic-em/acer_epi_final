@@ -742,6 +742,77 @@ p7=plot_taxa_heatmap(pseq.core,
 ggarrange(p7)
 p7
 
+###################################### Site differences  ############################
+#subset to just T12
+pst12= subset_samples(ps_rare, sample_data(ps_rare)$Timepoints =="12")
+pst12
+
+#alpha diversity, run anova 
+alph <- estimate_richness(pst12, measures = c("Observed", "Shannon", "Simpson", "Chao1", "Fisher"))
+alph
+
+#is the data normal?
+hist(alph$Shannon, main="Shannon diversity", breaks=13) #no so  
+
+#Now we want to know if genotypes only (not water) are different from each other (a-diversity, Shannon)
+
+#use Genotypes only subsetted data (see above 
+#Because data wasn't normal, you'd do a Kruskal Wallis test followed by dunn.test to figure out who is different 
+# Extracting the metadata from the phyloseq object
+my_factors = data.frame(sample_data(pst12))
+summary(pst12)
+
+# Testing for difference in Shannon according to sample type using
+# a Kruskal Wallis test (Non-parametric ANOVA)
+#Genotype
+kruskal.test(alph$Shannon ~ my_factors$Site) #nope at 0.9309
+
+#        Kruskal-Wallis rank sum test
+
+#data:  alph$Shannon by my_factors$Site
+#Kruskal-Wallis chi-squared = 3.0538, df = 8, p-value = 0.9309
+
+#what about observed richness
+kruskal.test(alph$Observed ~ my_factors$Site) #also nope
+
+dunn.test(alph$Shannon, my_factors$Site, method="bonferroni") #nope, dont reject H0
+
+#plot family in sites vs family in Genets 
+#use filtered data from ps2rare 
+pst12= subset_samples(ps2_rare, sample_data(ps2_rare)$Timepoints =="12")
+pst12
+
+#merge genotypes
+ps3_rare=subset_samples(pst12, sample_names(pst12) !="t12_99") #make sure technical replicate is tossed
+ps3_rare<-merge_samples(pst12, "Site")
+ps3_rare<-transform_sample_counts(ps3_rare, function(x) x /sum(x))
+str(sample_data(ps3_rare)$Genotype)
+sample_sums(ps3_rare)
+
+#plot relative abundance, phylum of sites
+p2=plot_bar(ps3_rare, fill="Phylum")
+phylumplot= p2+ geom_bar(aes(color=Phylum, fill=Phylum), stat="identity", position="stack")+ theme_bw()+ theme(text = element_text(size = 16))+ theme_bw()+
+theme(axis.text.x = element_text(face="bold", 
+                           size=10),
+          axis.text.y = element_text(face="bold",  
+                           size=14))+ theme_bw() + theme(text = element_text(size = 16))+theme(legend.title = element_text(size = 14),
+          legend.text = element_text(size= 14))
+phylumplot
+
+#plot phylum of just genotypes in T12
+ps3_rare<-merge_samples(pst12, "Genotype")
+ps3_rare<-transform_sample_counts(ps3_rare, function(x) x /sum(x))
+p2=plot_bar(ps3_rare, fill="Phylum")
+phylumplot= p2+ geom_bar(aes(color=Phylum, fill=Phylum), stat="identity", position="stack")+ theme_bw()+ theme(text = element_text(size = 16))+ theme_bw()+
+scale_x_discrete(name ="Genotype", 
+                    limits=c("t12_3", "t12_7", "t12_36", "t12_41", "t12_1", "t12_13", "t12_31", "t12_44", "t12_50", "t12_62", "t12_BP  " , "t12_BH", "t12_LK  ")) +
+theme(axis.text.x = element_text(face="bold", 
+                           size=10),
+          axis.text.y = element_text(face="bold",  
+                           size=14))+ theme_bw() + theme(text = element_text(size = 16))+theme(legend.title = element_text(size = 14),
+          legend.text = element_text(size= 14))
+phylumplot
+
 
 
 
