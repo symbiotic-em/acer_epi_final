@@ -813,6 +813,65 @@ theme(axis.text.x = element_text(face="bold",
           legend.text = element_text(size= 14))
 phylumplot
 
+##### comparing seawater from different sites ########################################
+ps7= subset_samples(ps2_rare, sample_data(ps2_rare)$Timepoints !="12") #leave only the T0 samples
+ps7
+ps7=prune_taxa(taxa_sums(ps7) > 0, ps7)
+head(sample_data(ps7))
+
+###BH corals vs BH water 
+ps8= subset_samples(ps2_rare, sample_data(ps2_rare)$Site =="BH")
+ps8
+ps8=prune_taxa(taxa_sums(ps8) > 0, ps8)
+head(sample_data(ps8))
+
+###BP corals vs BP FSW
+ps9= subset_samples(ps2_rare, sample_data(ps2_rare)$Site =="BP")
+ps9
+ps9=prune_taxa(taxa_sums(ps9) > 0, ps9)
+head(sample_data(ps9))
+
+#subset only water so kick out all the "Coral" types
+
+ps7= subset_samples(ps7, sample_data(ps7)$Type !="Coral")
+ps8=subset_samples(ps8, sample_data(ps8)$Type !="Coral")
+ps9= subset_samples(ps9, sample_data(ps9)$Type !="Coral")
+
+N_BH=merge_phyloseq(ps7, ps8)
+N_BP=merge_phyloeq(ps7, ps9)
+BH_BP=merge_phyloseq(ps8, ps9)
+
+
+######nursery FSW vs BH
+coralnur=phyloseq::distance(N_BH, method="bray")
+sampledf=data.frame(sample_data(N_BH))
+#test for homogeneity of groups dispersions for each group set
+beta=betadisper(coralnur, sampledf$Type)
+beta
+permutest(beta)#0.6083
+#evenly dispersed  
+adonis(formula = coralnur ~ Type, data = sampledf)#0.1 not significant 
+
+
+#####Nursery FSW vs BP
+coralnur_bp=phyloseq::distance(N_BP, method="bray")
+sampledf=data.frame(sample_data(N_BP))
+#test for homogeneity of groups dispersions for each group set
+beta=betadisper(coralnur_bp, sampledf$Type)
+beta
+permutest(beta)#0.9083 evenly dispersed 
+adonis(formula = coralnur_bp ~ Type, data = sampledf)#0.1 not significant 
+
+###BP vs BH
+bhbp=phyloseq::distance(BH_BP, method="bray")
+sampledf=data.frame(sample_data(BH_BP))
+#test for homogeneity of groups dispersions for each group set
+beta=betadisper(bhbp, sampledf$Type)
+beta
+permutest(beta)#0.04167 not evenly dispersed
+anosim(bhbp, sampledf$Type, permutations = 1000)#0.333
+
+
 
 
 
