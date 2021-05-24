@@ -6,7 +6,7 @@ Host-specific epibiomes of distinct Acropora cervicornis genotypes persist after
 	
 R scripts and input files for completing analyses described in "Host-specific epibiomes of distinct Acropora cervicornis genotypes persist after field transplantation", Emily Aguirre, emilyagu@usc.edu
 
-We studied the epibiome of ten Acropora cervicornis genotypes residing at an in-situ nursery (T0) and after transplantation to nine different environments, one year later (T12) to investigate the relative roles of host genotype and environment in structuring the epibiome. We applied amplicon sequencing of the 16S rRNA gene to assess microbial composition, richness and beta-diversity throughout time and sites.
+We studied the epibiome of ten Acropora cervicornis genotypes residing at an in-situ nursery (T0) and after transplantation to nine different environments, one year later (T12) to investigate the relative roles of host genotype and environment in structuring the epibiome. We applied amplicon sequencing of the 16S rRNA gene to assess microbial composition, richness and beta-diversity throughout time and transplant field sites.
 
 Annotations in the .R script describe input files, although all analyses can be re-created by starting with the raw .fastq files available for download at NCBI SRA under accession code: PRJNA630333.
 	
