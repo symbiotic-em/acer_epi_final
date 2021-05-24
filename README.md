@@ -1,6 +1,8 @@
 <insert some brief description of the project>
 <Emily - you can modify the outline below for your own files to include some descriptions and link to any other scripts or softwares used>
-#Host-specific epibiomes of distinct Acropora cervicornis genotypes persist after field transplantation
+
+Host-specific epibiomes of distinct Acropora cervicornis genotypes persist after field transplantation
+-----------
 	
 R scripts and input files for completing analyses described in "Host-specific epibiomes of distinct Acropora cervicornis genotypes persist after field transplantation", Emily Aguirre, emilyagu@usc.edu
 
