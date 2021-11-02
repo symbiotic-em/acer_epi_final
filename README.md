@@ -21,7 +21,7 @@ Files in this repository
 	- Input file: t1merged_seqtab2.rds              sequence table for T12
 	- Input file: t1merged_taxonomy.rds             taxonomy table for T12
 	
-2. dada2_makingASVseqtable.txt: Annotated R script (based on DADA2 pipeline tutorial) for making amplicon sequencing variants from fastqc files. 
+2. dada2_makingASVseqtable: Annotated R script (based on DADA2 pipeline tutorial) for making amplicon sequencing variants from fastqc files. 
 	- Input files: Please see demultiplexed sequences, available at the National Center for Biotechnology Information (NCBI) Sequence Read Archives (SRA) 
 	  under accession code: PRJNA630333	
 	
