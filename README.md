@@ -21,8 +21,11 @@ Files in this repository
 	- Input file: t1merged_seqtab2.rds              sequence table for T12
 	- Input file: t1merged_taxonomy.rds             taxonomy table for T12
 	
+2. dada2_makingASVseqtable.txt: Annotated R script (based on DADA2 pipeline tutorial) for making amplicon sequencing variants from fastqc files. 
+	- Input files: Please see demultiplexed sequences, available at the National Center for Biotechnology Information (NCBI) Sequence Read Archives (SRA) 
+	  under accession code: PRJNA630333	
 	
-2. For phylogenetic analysis/placement of MD3-55 sequences in this dataset and input files, please visit https://github.com/symbiotic-em/md355_phylotree
+3. For phylogenetic analysis/placement of MD3-55 sequences in this dataset and input files, please visit https://github.com/symbiotic-em/md355_phylotree
 
 
 
