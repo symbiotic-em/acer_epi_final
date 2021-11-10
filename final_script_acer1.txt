@@ -418,11 +418,15 @@ ps3_rare<-merge_samples(ps2_rare, "Genotype")
 ps3_rare<-transform_sample_counts(ps3_rare, function(x) x /sum(x))
 str(sample_data(ps3_rare)$Genotype)
 sample_sums(ps3_rare)
+colorbfriend= c( "#E5F5F9", "#1D91C0", "#67001F", "#F7FCFD", "#CB181D", "#78C679", "#F46D43", "#A6CEE3", "#FD8D3C", "#A6D854", "#D4B9DA", "#6A51A3", "#7F0000", "#D9D9D9", "#FFF7BC", "#000000", "#F0F0F0", "#C7EAE5", "#003C30", "#F16913", "#FFF7FB", "#8C6BB1", "#C7E9B4", "#762A83", "#FC9272", "#AE017E", "#F7F7F7", "#DF65B0", "#EF3B2C", "#74C476", "#FF62BC")
+colorbfriend
+
 
 #plot relative abundance, phylum
 p2=plot_bar(ps3_rare, fill="Phylum")
 p2
-phylumplot= p2+ geom_bar(aes(color=Phylum, fill=Phylum), stat="identity", position="stack")+ theme_bw()+ theme(text = element_text(size = 16))+ theme_bw()+
+phylumplot= p2+ geom_bar(aes(color=Phylum, fill=Phylum), stat="identity", position="stack")+ + scale_fill_manual(values = colorbfriend)
+phylumplot + theme_bw()+ theme(text = element_text(size = 16))+ theme_bw()+
 scale_x_discrete(name ="Genotype", 
                     limits=c("3", "7", "36", "41", "1", "13", "31", "44", "50", "62", "N", "t12_3", "t12_7",
        "t12_36", "t12_41", "t12_1", "t12_13", "t12_31", "t12_44", "t12_50", "t12_62", "t12_BP  " , "t12_BH", "t12_LK  ")) +
@@ -432,7 +436,6 @@ theme(axis.text.x = element_text(face="bold",
                            size=14))+ theme_bw() + theme(text = element_text(size = 16))+theme(legend.title = element_text(size = 14),
           legend.text = element_text(size= 14))
 
-phylumplot
 
 #plot top 100 ASVs
 #preferably using the same color of the phyla for correspondent genera
@@ -465,6 +468,8 @@ genus_top100
 site_colors<- c("#edae49", "#4DBBD5B2", "#00A087B2", "#3C5488B2", "#F39B7FB2", "#8491B4B2", "#91D1C2B2", "#DC0000B2", "#7E6148B2", "#8d96a3")
 type_colors<-c("#F8766D", "#7E6148B2", "#4DBBD5B2") 
 sw_site<-c("Coral"="#F8766D", "BH_SW"="#edae49", "BP_SW"="#4DBBD5B2", "LK_SW"="#8491B4B2", "Nursery"="#7E6148B2" )
+
+
 
 set.seed(123)
 ordinate<- ordinate(ps2_rare, method = "PCoA", distance ="wunifrac")
@@ -781,6 +786,8 @@ dunn.test(alph$Shannon, my_factors$Site, method="bonferroni") #nope, dont reject
 #use filtered data from ps2rare 
 pst12= subset_samples(ps2_rare, sample_data(ps2_rare)$Timepoints =="12")
 pst12
+#take out ASVs with 0 counts out in our samples and rarefy
+pst12=prune_taxa(taxa_sums(pst12) > 0, pst12)
 
 #merge genotypes
 ps3_rare=subset_samples(pst12, sample_names(pst12) !="t12_99") #make sure technical replicate is tossed
@@ -791,19 +798,21 @@ sample_sums(ps3_rare)
 
 #plot relative abundance, phylum of sites
 p2=plot_bar(ps3_rare, fill="Phylum")
-phylumplot= p2+ geom_bar(aes(color=Phylum, fill=Phylum), stat="identity", position="stack")+ theme_bw()+ theme(text = element_text(size = 16))+ theme_bw()+
+phylumplot= p2+ geom_bar(aes(color=Phylum, fill=Phylum), stat="identity", position="stack")+ scale_fill_manual(values = colorbfriend)
+
+phylumplot + theme_bw()+ theme(text = element_text(size = 16))+ theme_bw()+
 theme(axis.text.x = element_text(face="bold", 
                            size=10),
           axis.text.y = element_text(face="bold",  
                            size=14))+ theme_bw() + theme(text = element_text(size = 16))+theme(legend.title = element_text(size = 14),
-          legend.text = element_text(size= 14))
-phylumplot
+
 
 #plot phylum of just genotypes in T12
 ps3_rare<-merge_samples(pst12, "Genotype")
 ps3_rare<-transform_sample_counts(ps3_rare, function(x) x /sum(x))
 p2=plot_bar(ps3_rare, fill="Phylum")
-phylumplot= p2+ geom_bar(aes(color=Phylum, fill=Phylum), stat="identity", position="stack")+ theme_bw()+ theme(text = element_text(size = 16))+ theme_bw()+
+phylumplot= p2+ geom_bar(aes(color=Phylum, fill=Phylum), stat="identity", position="stack")+  scale_fill_manual(values = colorbfriend)
+phylumplot + theme_bw()+ theme(text = element_text(size = 16))+ theme_bw()+
 scale_x_discrete(name ="Genotype", 
                     limits=c("t12_3", "t12_7", "t12_36", "t12_41", "t12_1", "t12_13", "t12_31", "t12_44", "t12_50", "t12_62", "t12_BP  " , "t12_BH", "t12_LK  ")) +
 theme(axis.text.x = element_text(face="bold", 
@@ -811,7 +820,7 @@ theme(axis.text.x = element_text(face="bold",
           axis.text.y = element_text(face="bold",  
                            size=14))+ theme_bw() + theme(text = element_text(size = 16))+theme(legend.title = element_text(size = 14),
           legend.text = element_text(size= 14))
-phylumplot
+
 
 ##### comparing seawater from different sites ########################################
 ps7= subset_samples(ps2_rare, sample_data(ps2_rare)$Timepoints !="12") #leave only the T0 samples
