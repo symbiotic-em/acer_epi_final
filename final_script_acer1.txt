@@ -881,6 +881,57 @@ permutest(beta)#0.04167 not evenly dispersed
 anosim(bhbp, sampledf$Type, permutations = 1000)#0.333
 
 
+### Testing whether MD3-55 significantly increased post-transplantation #####
+#from microbiome tutorial -> https://microbiome.github.io/tutorials/Comparisons.html
+library(microbiome)
+library(ggplot2)
+library(dplyr)
+
+#clean up the taxa names first with microbiome tutorial, change 16S sequences to labeled ASVs by number to 
+#just sequences grouped by genera
+library(microbiomeutilities)
+
+#paste everyone as ASV
+taxa_names(ps2_rare) <- paste0("ASV", seq(ntaxa(ps2_rare)))
+taxa_names(ps2_rare)
+#now check again
+taxa_names(ps2_rare)[1:3]
+
+microbiome::summarize_phyloseq(ps2_rare)
+otu_tab <- microbiome::abundances(ps2_rare)
+otu_tab
+tax_tab <- phyloseq::tax_table(ps2_rare)
+tax_tab[1:6,1:6]
+#aggregate at genus level
+psagg <- phyloseq::tax_glom(ps2_rare, "Genus", NArm = TRUE)
+taxa_names(psagg)[1:5]
+taxa_names(psagg) <- tax_table(psagg)[,"Genus"]
+taxa_names(psagg)[1:6]
+
+#print all genus names
+unique(tax_table(psagg)[,"Genus"] )
+
+
+p <- boxplot_abundance(psagg, x = "Timepoints", y="MD3-55") + scale_y_log10()
+p
+
+tax <- "MD3-55"
+
+# Pick the signal (abundance) for this tax
+sample_data(psagg)$reads <- get_sample(psagg, tax)
+
+
+attach(meta(psagg))
+res<- wilcox.test(reads, Timepoints, p.adjust.method = 'BH')
+print(res) #yes, there is significant differences between timepoints
+
+
+##### Wilcoxon rank sum test with continuity correction
+
+#data:  signal and Timepoints
+#W = 22689, p-value < 2.2e-16
+#alternative hypothesis: true location shift is not equal to 0
+
 
 
 
